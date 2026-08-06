@@ -13,6 +13,13 @@ packages/party_room_relay/
 packages/llm_cli_runtime/
 ```
 
+
+## CI builds
+
+GitHub Actions (`.github/workflows/build.yml`) builds **Android / Windows / macOS / Linux / iOS(unsigned)** on `workflow_dispatch` or tag `v*`.
+
+Notarized macOS DMG and Android APK for end users are on [Releases](https://github.com/dalsoop/party-room/releases) (local Developer ID pipeline).
+
 ## Downloads
 
 See [Releases](https://github.com/dalsoop/party-room/releases) for:
