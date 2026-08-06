@@ -1,0 +1,17 @@
+tags:
+  # 진짜 배포된 랑데부에 붙는다. 인터넷과 남의 서버에 기대므로 기본 스위트에서
+  # 뺀다 — 그쪽이 잠깐 흔들릴 때마다 우리 빨간불이 되면 안 된다.
+  #
+  #   dart test test/live_relay_manual_test.dart -t live --run-skipped
+  #
+  # `--run-skipped` 가 있어야 한다. skip 이 걸린 태그는 `-t` 만으로는 안 풀린다.
+  live:
+    skip: "기본 스위트에서 제외 (-t live --run-skipped 로 실행)"
+
+  # 배포를 실제로 갈아 끼운다. `live` 와 **따로** 둔 이유는, 같이 돌리면
+  # 다른 실물 테스트가 한창일 때 파드를 죽여 엉뚱한 실패를 만들기 때문이다.
+  # 혼자 돌린다.
+  #
+  #   dart test test/live_relay_restart_test.dart -t live-disruptive --run-skipped
+  live-disruptive:
+    skip: "배포를 흔든다 — 혼자 돌릴 것 (-t live-disruptive --run-skipped)"

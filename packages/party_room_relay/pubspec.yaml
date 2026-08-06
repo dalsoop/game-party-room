@@ -1,0 +1,17 @@
+name: party_room_relay
+description: 파티룸 랑데부 서버 — 짝만 지어 주고 프레임만 날라 준다. 게임은 모른다.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  crypto: ^3.0.0
+  shelf: ^1.4.0
+  shelf_web_socket: ^3.0.0
+  web_socket_channel: ^3.0.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.0

@@ -1,0 +1,30 @@
+# 이 패키지에는 린트 설정이 아예 없었다 — 5,000줄 넘는 핵심 로직이 기본
+# 분석기만 지나고 있었다. 취향 규칙이 아니라 **실제로 버그를 잡는 것**만 켠다.
+include: package:lints/recommended.yaml
+
+analyzer:
+  language:
+    # 암묵적 형변환·raw 타입을 막는다. `dynamic` 이 조용히 섞이면
+    # 컴파일은 되고 폰에서 터진다.
+    strict-casts: true
+    strict-raw-types: true
+
+linter:
+  rules:
+    # --- 자원을 놓치는 것 ---
+    # 실제로 겪었다: 방 구독을 안 끊어 지운 방이 계속 화면을 깨웠다.
+    - cancel_subscriptions
+    - close_sinks
+
+    # --- 조용히 어긋나는 것 ---
+    # await 를 빠뜨리면 저장이 끝나기 전에 다음이 돌아간다.
+    - unawaited_futures
+    - avoid_dynamic_calls
+    - throw_in_finally
+    - test_types_in_equals
+
+    # --- 읽는 사람을 속이는 것 ---
+    - always_declare_return_types
+    - avoid_returning_null_for_void
+    - unnecessary_await_in_return
+    - prefer_final_locals

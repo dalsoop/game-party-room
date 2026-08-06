@@ -1,0 +1,11 @@
+**/build/
+**/.dart_tool/
+**/.flutter-plugins*
+**/.packages
+**/Pods/
+**/.symlinks/
+**/DerivedData/
+**/*.iml
+.idea/
+.DS_Store
+*.log

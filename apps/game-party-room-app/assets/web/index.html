@@ -1,0 +1,1190 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>파티룸</title>
+<style>
+  @font-face {
+    font-family: 'NexonLv2';
+    src: url('/fonts/nexon.ttf') format('truetype');
+    font-display: swap;
+  }
+
+  /* ── 토큰 ──────────────────────────────────────────────
+     낮은 밝은 하늘색 바탕, 밤은 딥네이비. 강조는 하늘색 하나뿐이고
+     그 위에는 반드시 흰 글자를 올린다. 자간은 어디서도 건드리지 않는다. */
+  :root {
+    --bg:#F4F7FB; --card:#FFFFFF; --soft:#EEF3FA; --line:#DBE4F0;
+    --ink:#1C2333; --navy:#1D2B50; --dim:#7A879E;
+    --sky:#2FB3FF; --skyInk:#0E7FC4;
+    --ok:#2ED573; --red:#FF4757; --gold:#FFA502;
+    /* HUD 골격: 패널 테두리(frame)와 상단 지휘줄(plate) */
+    --frame:#1D2B50; --plate:#1D2B50; --plateInk:#EAF2FF; --plateDim:#8FB6DE;
+    --notch:22px;
+  }
+  body.night {
+    --bg:#0D1226; --card:#171D38; --soft:#20284A; --line:#2A355E;
+    --ink:#DFE6FF; --navy:#DFE6FF; --dim:#8A97C2; --skyInk:#7FD4FF;
+    --frame:#5B6DA8; --plate:#233060;
+  }
+
+  * { box-sizing:border-box; margin:0; -webkit-tap-highlight-color:transparent; }
+  html, body { height:100%; }
+  body {
+    background:var(--bg); color:var(--ink);
+    font:16px/1.6 'NexonLv2', -apple-system, 'Apple SD Gothic Neo', system-ui, sans-serif;
+    display:flex; align-items:center; justify-content:center;
+    transition:background .7s, color .7s;
+    -webkit-font-smoothing:antialiased;
+    /* 아래에 채팅·메모 버튼이 떠 있다(54px + 16 여백). 가운데 정렬은
+       유지하되 그만큼 위로 올려, 폰에서 패널 모서리가 버튼에 겹치지
+       않게 한다 — 실측으로 역할 카드가 두 버튼에 물렸다. */
+    padding-bottom:calc(70px + env(safe-area-inset-bottom));
+    box-sizing:border-box;
+  }
+
+  /* ── 배경 ──────────────────────────────────────────────
+     세 장을 겹쳐 두고 opacity 만 바꾼다 — background-image 를 갈아끼우면
+     교체 순간이 끊겨 보이고, 새 그림을 그때 받느라 한 프레임 빈다. */
+  .bgset { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+  .bgset .bg {
+    position:absolute; inset:0; background:center/cover no-repeat;
+    opacity:0; transition:opacity .8s ease;
+  }
+  .bgset .bg.on { opacity:1; }
+  /* 셀렉터 무게를 위 .bgset .bg 와 맞춰야 한다 — 짧게 쓰면 위의 background
+     단축 속성이 이 그림을 none 으로 되돌린다 */
+  .bgset .bg-lobby { background-image:url('/img/bg_lobby.jpg'); }
+  .bgset .bg-day   { background-image:url('/img/bg_day.jpg'); }
+  .bgset .bg-night { background-image:url('/img/bg_night.jpg'); }
+
+  /* ── HUD 패널 ─────────────────────────────────────────
+     둥근 카드가 아니라 각진 판이다. 오른위·왼아래 두 귀퉁이를 대각선으로
+     자르고(--notch), 남은 직각 두 귀퉁이에만 브래킷을 건다.
+     테두리는 .plate(테두리색 바탕) 안에 .plate-in(내용 바탕)을 2px 들여
+     겹치는 방식 — border 로는 대각선 변에 선을 그을 수 없다. */
+  .card {
+    position:relative; z-index:1; width:min(94vw,430px);
+    filter:drop-shadow(0 14px 30px rgba(16,44,80,.30));
+  }
+  body.night .card { filter:drop-shadow(0 14px 34px rgba(0,0,0,.62)); }
+
+  .plate {
+    background:var(--frame); padding:2px;
+    clip-path:polygon(0 0, calc(100% - var(--notch)) 0, 100% var(--notch),
+                      100% 100%, var(--notch) 100%, 0 calc(100% - var(--notch)));
+    transition:background .7s;
+  }
+  .plate-in {
+    position:relative; background:var(--card);
+    clip-path:polygon(0 0, calc(100% - var(--notch)) 0, 100% var(--notch),
+                      100% 100%, var(--notch) 100%, 0 calc(100% - var(--notch)));
+    transition:background .7s;
+  }
+  /* 잘리지 않은 두 귀퉁이에만 브래킷 — 잘린 쪽에 걸면 clip 에 먹힌다 */
+  .plate-in::before, .plate-in::after {
+    content:""; position:absolute; width:15px; height:15px;
+    border:2px solid var(--sky); pointer-events:none; z-index:3;
+  }
+  .plate-in::before { left:0; top:0; border-right:0; border-bottom:0; }
+  .plate-in::after { right:0; bottom:0; border-left:0; border-top:0; }
+
+  /* 상단 지휘줄 */
+  .hud-top {
+    position:relative; overflow:hidden;
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--plate); color:var(--plateInk);
+    padding:11px 15px 10px; font-size:13.5px; font-weight:700;
+    border-bottom:2px solid var(--sky);
+    transition:background .7s;
+  }
+  .hud-top > * { position:relative; z-index:1; }
+  .hud-top .hud-id { display:flex; align-items:center; gap:9px; }
+  .hud-top .mark { width:9px; height:9px; background:var(--sky); transform:rotate(45deg); flex:none; }
+  .hud-meta { color:var(--plateDim); font-size:12px; font-weight:700; }
+  /* 사선 해칭 — 판이 그냥 색면이 아니라 재질이 있어 보이게 */
+  .hud-top::after {
+    content:""; position:absolute; inset:0; pointer-events:none; opacity:.09;
+    background:repeating-linear-gradient(115deg, transparent 0 5px, #fff 5px 6px);
+  }
+  /* 화면이 바뀔 때 지휘줄을 한 번 훑는 빛 */
+  .hud-sweep {
+    position:absolute; inset:0; pointer-events:none; opacity:0; z-index:2;
+    background:linear-gradient(100deg, transparent 32%, rgba(47,179,255,.6) 50%, transparent 68%);
+  }
+  .hud-top.flash .hud-sweep { animation:sweep .75s ease-out; }
+  @keyframes sweep {
+    from { opacity:1; transform:translateX(-65%); }
+    to   { opacity:0; transform:translateX(65%); }
+  }
+
+  .hud-body { padding:18px 17px 20px; }
+
+  /* 화면 전환은 짧게 밀어 올린다 — 정적으로 갈리면 바뀐 걸 놓친다.
+     투명도는 건드리지 않는다: 웹킷은 화면이 안 보이는 탭의 애니메이션을 멈춰
+     세우는데, from 이 opacity:0 이면 그 상태로 굳어 화면이 통째로 사라진다.
+     9px 밀린 채로 굳는 건 아무도 눈치채지 못한다. */
+  @keyframes sceneIn { from { transform:translateY(9px); } to { transform:none; } }
+  .hud-body > [id^=scene-]:not(.hidden) { animation:sceneIn .3s ease-out; }
+
+  /* ── 글의 층위 ────────────────────────────────────────
+     면을 채우는 것은 "목록 한 줄"과 "누를 수 있는 것"뿐이다.
+     제목·소제목은 절대 채우지 않는다 — 채우는 순간 선택지와 구별이 안 된다.
+     층위는 크기·굵기·여백으로만 만든다. 왼쪽에 세우던 색 막대는 뺐다. */
+  h1 {
+    font-size:22px; font-weight:800; line-height:1.35; color:var(--ink);
+    margin-bottom:15px; text-align:left;
+  }
+  .center { text-align:center; }
+  .hidden { display:none !important; }
+
+  /* ── 입력·버튼 ── */
+  input, textarea {
+    width:100%; padding:13px 14px; font:inherit; font-size:16px;
+    border-radius:0; border:1px solid var(--line);
+    background:var(--soft); color:var(--ink); margin-bottom:12px;
+    transition:border-color .16s;
+  }
+  input:focus, textarea:focus { outline:0; border-color:var(--sky); }
+
+  /* 모든 실행 버튼은 오른아래를 자른다 — 패널의 노치와 같은 어법 */
+  button {
+    width:100%; padding:14px; font:inherit; font-size:16px; font-weight:700;
+    border:0; border-radius:0; background:var(--sky); color:#fff; cursor:pointer;
+    clip-path:polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+    transition:filter .15s, transform .08s;
+  }
+  button:hover { filter:brightness(1.07); }
+  button:active { transform:scale(.985); }
+  button:disabled { background:var(--soft); color:var(--dim); cursor:default; }
+  button:disabled:hover { filter:none; }
+  button:disabled:active { transform:none; }
+
+  /* 확정 버튼 — 목록에서 한 칸 떼어 놓는다. 붙어 있으면 그것도 선택지로 읽힌다. */
+  button.confirm { margin-top:13px; }
+
+  /* 지목 목록 — 번호는 CSS 카운터라 렌더러를 건드리지 않는다.
+     소제목과 헷갈리지 않도록 번호와 오른쪽 선택 표식을 단다.
+     둘 다 제목에는 없는 것들이라, 색 막대 없이도 "고를 수 있는 줄"로 읽힌다. */
+  #nightTargets, #voteTargets, #liarTargets, #pollOpts { counter-reset:opt; }
+  button.opt {
+    background:var(--soft); color:var(--ink); border:0;
+    text-align:left; padding:14px 16px; margin-bottom:7px; font-weight:700;
+    position:relative; overflow:hidden;
+    display:flex; align-items:center; gap:11px;
+    clip-path:polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+    transition:background .16s, color .16s, transform .08s;
+  }
+  button.opt::before {
+    counter-increment:opt; content:counter(opt, decimal-leading-zero);
+    color:var(--dim); font-size:12px; font-weight:700; flex:none;
+  }
+  /* 오른쪽 끝 마름모 — 비어 있으면 "고를 수 있다", 차면 "골랐다" */
+  .optmark {
+    flex:none; width:11px; height:11px; margin-left:10px;
+    border:2px solid var(--dim); transform:rotate(45deg);
+    transition:background .16s, border-color .16s;
+  }
+  button.opt:hover { background:color-mix(in srgb, var(--sky) 9%, var(--soft)); }
+  button.opt:hover .optmark { border-color:var(--sky); }
+  button.opt.sel { background:var(--sky); color:#fff; }
+  button.opt.sel::before { color:rgba(255,255,255,.8); }
+  button.opt.sel .optmark { border-color:#fff; background:#fff; }
+  /* 손가락이 표시를 가리므로 누른 줄이 한 번 번쩍인다.
+     내용 위에 흰 면을 덮지 않고 안쪽 테두리만 번지게 한다 — 덮는 방식은
+     렌더가 애니메이션을 t=0 에 세워 두면 글자가 통째로 지워진 채 굳는다. */
+  button.opt.sel { animation:tap .45s ease-out; }
+  @keyframes tap {
+    from { box-shadow:inset 0 0 0 3px rgba(255,255,255,.9); }
+    to   { box-shadow:inset 0 0 0 3px rgba(255,255,255,0); }
+  }
+
+  /* ── 목록 ──
+     padding 을 반드시 0 으로 둔다. 맨 위 * 규칙은 margin 만 지우므로,
+     브라우저 기본 ul{padding-inline-start:40px} 이 그대로 남아
+     명단 줄만 40px 안으로 밀린 채 좁아진다. */
+  ul { list-style:none; margin-top:12px; padding:0; }
+  li {
+    padding:11px 14px; background:var(--soft); margin-bottom:6px;
+    clip-path:polygon(0 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%);
+    display:flex; align-items:center; gap:10px; font-size:14.5px;
+  }
+  .name { flex:1; }
+  .dot { width:8px; height:8px; flex:none; transform:rotate(45deg); }
+  .on { background:var(--ok); } .off { background:#B8C2D4; }
+  li.off-row { opacity:.55; }
+  li.off-row .name { text-decoration:line-through; text-decoration-color:var(--dim); }
+  .offlabel { flex:none; font-size:11px; color:var(--dim); margin-right:2px; }
+
+  /* 방이 발급한 공개 식별자 — 동명이인을 가르는 기준이라 항상 이름 옆에 붙는다 */
+  .ptag {
+    flex:none; font-size:11px; font-weight:700; color:var(--dim);
+    background:var(--card); padding:2px 7px; margin-left:8px;
+    font-variant-numeric:tabular-nums;
+  }
+  button.opt.sel .ptag { background:rgba(255,255,255,.24); color:#fff; }
+  td .ptag { display:inline-block; }
+
+  /* ── 상태 문구 ── */
+  .status { text-align:center; color:var(--dim); font-size:13px; margin-top:12px; }
+
+  /* 소제목 — 아래 목록이 무엇인지 알리는 줄. 밑줄만 긋고 면은 비운다. */
+  .q {
+    font-size:16px; font-weight:700; color:var(--ink); text-align:left;
+    margin:0 0 11px; padding:0 0 9px; border-bottom:1px solid var(--line);
+  }
+  /* 내 신원 — 읽기만 하는 정보라 목록 줄처럼 보이면 안 된다 */
+  .whoami {
+    display:flex; align-items:center; gap:8px;
+    font-size:13.5px; color:var(--dim); margin:-6px 0 14px;
+  }
+  .whoami b { color:var(--ink); font-size:15px; font-weight:700; }
+  .whoami .ptag { margin-left:0; background:var(--soft); }
+  .big { font-size:40px; text-align:center; margin:6px 0; font-weight:700; }
+
+  .bar { height:8px; background:var(--soft); overflow:hidden; margin:4px 0 12px; }
+  .bar > div { height:100%; background:var(--sky); transition:width .45s cubic-bezier(.3,.9,.3,1); }
+
+  /* ── 삽화 배너 ────────────────────────────────────────
+     씬 그림은 화면 폭을 꽉 채우는 띠로 쓴다. 아래 가장자리를 한 번 자르고
+     하늘색 밑줄을 깔아 패널 어법과 맞춘다. */
+  .banner { position:relative; margin-bottom:13px; }
+  /* 그림은 세로 여유가 있을 때만 크게 나온다.
+     예전에는 width:100% 뿐이라 화면 높이와 무관하게 그려졌다 — 실측으로
+     투표 화면의 58%, 역할 화면의 85%가 그림이었고, 정작 지목 대상 목록과
+     "이 화면을 남에게 보여주지 마세요" 경고가 스크롤 밖으로 밀려났다.
+     장식이 내용을 밀어내면 장식이 아니라 방해다. */
+  .banner img {
+    width:100%; display:block;
+    max-height:22vh; object-fit:cover; object-position:center;
+  }
+  /* 세로가 짧은 폰에서는 그림이 **먼저** 접힌다.
+     실측: 마피아 밤 장면에서 그림 말고 나머지가 516px 이라, 22vh 를 얹으면
+     뷰포트가 662px 보다 짧을 때 지목 목록의 끝이 접힌 화면 밖으로 나간다 —
+     아이폰 SE 급이 여기 걸린다. 눌러야 할 것이 안 보이는 것보다 그림이
+     작은 편이 낫다. */
+  @media (max-height: 700px) {
+    .banner img { max-height:12vh; }
+  }
+  .banner {
+    clip-path:polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
+    border-bottom:3px solid var(--sky);
+  }
+
+  /* ── 역할 카드 ──
+     프레임 그림 자체가 테두리라 모서리를 자르면 그림이 잘린다 — 그대로 둔다. */
+  .rolecard {
+    /* 세로가 좁으면 카드도 줄어든다 — 카드 밑의 역할 이름·설명·경고가
+       화면에 남아 있어야 한다(같은 이유). */
+    position:relative; margin:0 auto 14px;
+    max-width:min(250px, 30vh); aspect-ratio:1/1.5;
+    background:#fff center/100% 100% no-repeat; overflow:hidden;
+  }
+  .rolecard .roleobj {
+    position:absolute; left:50%; top:50%; width:70%;
+    transform:translate(-50%,-50%) scale(.84); opacity:0;
+    transition:transform .34s cubic-bezier(.2,1.5,.4,1), opacity .26s;
+  }
+  .secret.revealed .rolecard .roleobj { transform:translate(-50%,-50%) scale(1); opacity:1; }
+  /* 뒤집는 순간 카드 위를 한 번 훑는 빛 */
+  .rolecard::after {
+    content:""; position:absolute; inset:0; pointer-events:none; opacity:0;
+    background:linear-gradient(105deg, transparent 38%, rgba(255,255,255,.75) 50%, transparent 62%);
+  }
+  .secret.revealed .rolecard::after { animation:shine .8s ease-out .1s; }
+  @keyframes shine {
+    from { opacity:1; transform:translateX(-70%); }
+    to   { opacity:0; transform:translateX(70%); }
+  }
+
+  .rolename { font-size:30px; font-weight:700; text-align:center; margin:4px 0 2px; color:var(--ink); }
+  .rolename.mafia { color:var(--red); }
+  .roledesc { font-size:14px; text-align:center; color:var(--dim); }
+  .roletags { display:flex; gap:6px; justify-content:center; flex-wrap:wrap; margin-top:10px; }
+  .roletag {
+    font-size:12px; font-weight:700; padding:4px 11px;
+    background:var(--soft); color:var(--dim);
+  }
+  .roletag.team { background:var(--sky); color:#fff; }
+  .roletag.team.mafia { background:var(--red); }
+  /* 이름·설명·꼬리표는 가림막이 걷힌 뒤 차례로 */
+  .rolename, .roledesc, .roletags { opacity:0; transform:translateY(7px); transition:opacity .3s, transform .3s; }
+  .secret.revealed .rolename { opacity:1; transform:none; transition-delay:.06s; }
+  .secret.revealed .roledesc { opacity:1; transform:none; transition-delay:.12s; }
+  .secret.revealed .roletags { opacity:1; transform:none; transition-delay:.18s; }
+
+  .warn {
+    background:color-mix(in srgb, var(--red) 10%, var(--card)); color:var(--red);
+    padding:12px 14px; font-size:13px; text-align:center; margin-top:12px;
+    clip-path:polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+  }
+  .mates {
+    background:color-mix(in srgb, var(--red) 14%, var(--card)); color:var(--red);
+    padding:12px; font-size:14px; text-align:center; margin-top:10px; font-weight:700;
+    clip-path:polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+  }
+
+  /* ── 제시어 카드 (라이어) ── */
+  .wordcard {
+    background:var(--plate); color:#fff; position:relative; overflow:hidden;
+    padding:30px 16px; text-align:center; margin-bottom:12px;
+    clip-path:polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+  }
+  .wordcard::after {
+    content:""; position:absolute; inset:0; pointer-events:none; opacity:.1;
+    background:repeating-linear-gradient(115deg, transparent 0 5px, #fff 5px 6px);
+  }
+  .wordcard .cat { font-size:13px; opacity:.75; position:relative; z-index:1; }
+  .wordcard .w { font-size:32px; font-weight:700; position:relative; z-index:1; }
+  .wordcard.liar { background:var(--red); }
+
+  /* ── 비밀 가림막 = 카드 뒷면 ──────────────────────────
+     줄무늬 대신 실제 카드 뒷면 그림을 덮는다. 세로 2:3 그림이라
+     영역이 넓어지면 위아래가 잘리지만 문양이 좌우대칭이라 티가 안 난다. */
+  .secret { position:relative; }
+  .secret .veil {
+    position:absolute; inset:0; z-index:5; overflow:hidden;
+    background:#16203F url('/img/card_back.jpg') center/cover no-repeat;
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-end;
+    gap:4px; padding-bottom:18px;
+    color:#BFD6FF; font-weight:700; cursor:pointer; user-select:none;
+    clip-path:polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+    transition:opacity .2s;
+  }
+  /* 문양 위에 글자를 그냥 얹으면 읽히지 않는다 — 아래쪽만 어둡게 깐다 */
+  .secret .veil::before {
+    content:""; position:absolute; inset:auto 0 0 0; height:46%;
+    background:linear-gradient(transparent, rgba(10,16,36,.88));
+    pointer-events:none;
+  }
+  .secret .veil > * { position:relative; z-index:1; }
+  .secret .veil .eye { opacity:.9; }
+  .secret.revealed .veil { opacity:0; pointer-events:none; }
+  .wordimg {
+    width:100%; margin-bottom:10px; display:block;
+    max-height:26vh; object-fit:contain;
+  }
+
+  /* ── 구슬 룰렛 ────────────────────────────────────────
+     폰에서 할 일이 없는 종목이라, 화면이 하는 일은 "내 구슬을 큰 화면에서
+     찾게 해 주는 것" 하나뿐이다. 그래서 구슬 하나가 화면을 다 차지한다. */
+  .marble {
+    width:132px; height:132px; border-radius:50%; margin:6px auto 14px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:52px; font-weight:800; color:#fff;
+    box-shadow:inset -10px -12px 22px rgba(0,0,0,.28),
+               inset 10px 12px 20px rgba(255,255,255,.34),
+               0 10px 24px rgba(16,44,80,.30);
+  }
+  .marble.small { width:74px; height:74px; font-size:30px; margin-bottom:10px; }
+  /* 출발하면 내 구슬이 구른다 — 폰에서 유일하게 움직이는 것 */
+  .marble.rolling { animation:marbleRoll 1.1s ease-in-out infinite; }
+  @keyframes marbleRoll {
+    0%, 100% { transform:translateY(0) rotate(-8deg); }
+    50% { transform:translateY(-14px) rotate(8deg); }
+  }
+  .marbledot { width:13px; height:13px; border-radius:50%; flex:none; }
+  .rankno {
+    width:26px; flex:none; font-size:12px; font-weight:700; color:var(--dim);
+    font-variant-numeric:tabular-nums;
+  }
+  .seedline { text-align:center; color:var(--dim); font-size:11.5px; margin-top:10px; }
+
+  /* ── 사다리타기 ── */
+  .ladderbadge {
+    width:96px; height:96px; border-radius:50%; margin:4px auto 12px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:40px; font-weight:800; color:#fff;
+    box-shadow:inset -8px -10px 18px rgba(0,0,0,.26),
+               inset 8px 10px 16px rgba(255,255,255,.32),
+               0 8px 20px rgba(16,44,80,.28);
+  }
+  .ladderbadge.small { width:64px; height:64px; font-size:26px; }
+  .ladder-outcome {
+    text-align:center; font-size:38px; font-weight:800; color:var(--ink);
+    padding:18px 12px; background:var(--soft); margin-bottom:12px;
+    clip-path:polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+  }
+  .ladder-outcome.hit { background:var(--sky); color:#fff; }
+
+  /* ── 밤/낮 배지 ── */
+  .phase-badge {
+    display:inline-flex; align-items:center; gap:7px; padding:6px 14px;
+    font-size:13px; font-weight:700; margin-bottom:12px;
+    clip-path:polygon(0 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%);
+  }
+  .phase-badge::before { content:""; width:7px; height:7px; background:currentColor; transform:rotate(45deg); }
+  .phase-night { background:var(--plate); color:#9DB8FF; }
+  .phase-day { background:var(--plate); color:#FFD98A; }
+
+  .announce {
+    background:color-mix(in srgb, var(--sky) 11%, var(--card));
+    padding:14px 16px; margin-bottom:14px; font-size:15px;
+    clip-path:polygon(0 0, 100% 0, 100% calc(100% - 11px), calc(100% - 11px) 100%, 0 100%);
+  }
+  .dead-overlay { text-align:center; padding:14px 0; }
+  .winner { font-size:30px; font-weight:700; text-align:center; margin:10px 0; }
+
+  .ghostimg { width:170px; margin:0 auto 12px; display:block; }
+  .winimg, .avatar { display:block; }
+  .winimg {
+    width:100%; margin-bottom:12px;
+    max-height:24vh; object-fit:cover;
+  }
+  .avatar { width:34px; height:34px; object-fit:cover; }
+
+  table { width:100%; border-collapse:collapse; margin-top:10px; font-size:14px; }
+  td { padding:9px 8px; border-bottom:1px solid var(--line); }
+
+  /* ── 단톡·자료함 ── */
+  #chatBtn {
+    position:fixed; left:16px; bottom:16px; width:54px; height:54px; z-index:50; padding:0;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 6px 18px rgba(29,43,80,.32);
+    clip-path:polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
+  }
+  #chatBadge {
+    position:absolute; top:4px; right:4px; min-width:18px; height:18px;
+    background:var(--red); color:#fff; font-size:10.5px; font-weight:800;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:99px; padding:0 4px;
+  }
+  #chatPanel {
+    position:fixed; left:0; right:0; bottom:0; background:var(--card); z-index:60;
+    border-top:2px solid var(--sky); padding:16px 18px 18px;
+    box-shadow:0 -8px 30px rgba(0,0,0,.25);
+    transform:translateY(105%); transition:transform .3s; max-height:76vh;
+    display:flex; flex-direction:column;
+  }
+  #chatPanel.open { transform:translateY(0); }
+  .tabbar { display:flex; gap:6px; }
+  button.tab {
+    width:auto; padding:7px 16px; font-size:14px;
+    background:var(--soft); color:var(--dim);
+  }
+  button.tab.sel { background:var(--sky); color:#fff; }
+  /* 칸 고르기 — 판이 쌓이면 가로로 늘어난다. 세로로 접히면 패널이 밀린다. */
+  #chatSections {
+    display:flex; gap:6px; margin-top:10px; overflow-x:auto;
+    scrollbar-width:none; -webkit-overflow-scrolling:touch;
+  }
+  #chatSections::-webkit-scrollbar { display:none; }
+  button.sectab {
+    flex:none; width:auto; padding:6px 12px; font-size:12.5px;
+    background:var(--soft); color:var(--dim); white-space:nowrap;
+    display:flex; align-items:center; gap:6px;
+  }
+  button.sectab.sel { background:var(--plate); color:#fff; }
+  /* '전체' 는 밀려나지 않는다.
+     판이 몇 번 돌면 탭 줄이 넘치고, 선택된 칸을 보이게 스크롤하면서 맨
+     왼쪽의 '전체' 가 화면 밖으로 나간다. 하필 그게 **끝난 판을 보고 있을 때
+     유일하게 쓸 수 있는 칸**이라, 닿을 방법이 없어진다(스크롤바도 숨김). */
+  button.sectab:first-child {
+    position:sticky; left:0; z-index:1;
+    box-shadow:6px 0 6px -4px rgba(0,0,0,.18);
+  }
+  /* 끝난 판은 읽기 전용 — 흐리게 두되 지우지는 않는다. */
+  button.sectab.done { opacity:.62; }
+  button.sectab.sel.done { opacity:1; }
+  .secbadge {
+    background:var(--sky); color:#fff; font-size:10px; line-height:1;
+    padding:3px 5px; border-radius:8px;
+  }
+  #chatLog {
+    height:min(300px, 44vh); overflow-y:auto; background:var(--soft);
+    padding:12px; margin-top:10px;
+  }
+  #chatLog .cempty {
+    height:100%; display:flex; align-items:center; justify-content:center;
+    color:var(--dim); font-size:13px; text-align:center;
+  }
+  .chatrow input:disabled { opacity:.6; }
+  .cmsg { margin-bottom:9px; max-width:86%; }
+  .cmsg .cwho { font-size:10.5px; color:var(--dim); margin-bottom:2px; }
+  .cmsg .cbody {
+    display:inline-block; background:var(--card); padding:7px 11px;
+    font-size:14px; line-height:1.5; text-align:left; word-break:break-word;
+    clip-path:polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
+  }
+  .cmsg.mine { margin-left:auto; text-align:right; }
+  .cmsg.mine .cbody { background:var(--sky); color:#fff; }
+  .cmsg.host .cbody { background:var(--plate); color:#fff; }
+  /* 사회자는 호스트와 갈라 보여야 한다 — 지어낸 말이 호스트 말로 읽히면 안 된다. */
+  .cmsg.mc .cbody { background:var(--skyInk); color:#fff; }
+  .chatrow { display:flex; gap:8px; margin-top:10px; }
+  .chatrow input { flex:1; margin:0; }
+  .chatrow button { width:auto; padding:0 20px; }
+  #fileList { margin-top:10px; max-height:min(300px, 44vh); overflow-y:auto; }
+  #fileList .fmeta { flex:none; font-size:11px; color:var(--dim); }
+  #fileList .fdl { flex:none; color:var(--skyInk); display:flex; padding:4px; }
+  #fileList .fempty { justify-content:center; color:var(--dim); font-size:13px; }
+  #fileUpBtn { margin-top:10px; }
+
+  /* ── 메모장 ── */
+  #memoBtn {
+    position:fixed; right:16px; bottom:16px; width:54px; height:54px; z-index:50; padding:0;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 6px 18px rgba(29,43,80,.32);
+    clip-path:polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
+  }
+  #memoPanel {
+    position:fixed; left:0; right:0; bottom:0; background:var(--card); z-index:60;
+    border-top:2px solid var(--sky); padding:18px;
+    box-shadow:0 -8px 30px rgba(0,0,0,.25);
+    transform:translateY(105%); transition:transform .3s; max-height:70vh;
+  }
+  #memoPanel.open { transform:translateY(0); }
+  #memoText { height:180px; resize:none; font-size:15px; }
+  .memo-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .memo-head b { font-size:16px; }
+  .memo-head button { width:auto; padding:7px 15px; font-size:14px; }
+
+  @media (prefers-reduced-motion:reduce) {
+    * { transition:none !important; animation:none !important; }
+    .rolename, .roledesc, .roletags, .rolecard .roleobj { opacity:1; transform:none; }
+  }
+</style>
+</head>
+<body>
+<div class="bgset" aria-hidden="true">
+  <div class="bg bg-lobby" id="bgLobby"></div>
+  <div class="bg bg-day" id="bgDay"></div>
+  <div class="bg bg-night" id="bgNight"></div>
+</div>
+
+<div class="card" id="mainCard">
+ <div class="plate"><div class="plate-in">
+
+  <!-- 상단 지휘줄 — 지금 어느 화면인지, 옆에 무엇을 알아야 하는지 -->
+  <div class="hud-top" id="hudTop">
+    <div class="hud-id"><i class="mark"></i><span id="hudTag">파티룸</span></div>
+    <div class="hud-meta" id="hudMeta"></div>
+    <div class="hud-sweep"></div>
+  </div>
+
+  <div class="hud-body">
+
+  <!-- 입장 -->
+  <div id="scene-join">
+    <h1>파티룸 입장</h1>
+    <!-- 폰에서는 키보드의 확인 키가 입장 버튼보다 가깝다(버튼을 키보드가
+         덮기도 한다). enterkeyhint 로 그 키를 '이동' 으로 보이게 하고,
+         눌렀을 때 실제로 입장한다 — 채팅 입력에는 있던 것이 여기만 빠져 있었다. -->
+    <input id="nick" placeholder="닉네임 (최대 12자)" maxlength="12"
+           autocomplete="off" autocapitalize="off" enterkeyhint="go"
+           onkeydown="if(event.key==='Enter'){event.preventDefault();join();}">
+    <!-- 비밀번호를 건 방에서만 나온다. 미리 보여주면 안 건 방에서도
+         뭔가 더 입력해야 하는 것처럼 보인다. -->
+    <input id="pin" class="hidden" placeholder="입장 비밀번호 4자리"
+           inputmode="numeric" maxlength="4" autocomplete="off"
+           enterkeyhint="go"
+           onkeydown="if(event.key==='Enter'){event.preventDefault();join();}">
+    <button onclick="join()">입장하기</button>
+    <div class="status" id="joinStatus"></div>
+  </div>
+
+  <!-- 로비 -->
+  <div id="scene-lobby" class="hidden">
+    <h1>대기실</h1>
+    <div class="whoami">내 이름
+      <b id="me" class="rename" onclick="changeName()" title="눌러서 이름 바꾸기"></b><span class="ptag" id="meTag"></span>
+      <button class="renameBtn" onclick="changeName()">바꾸기</button>
+    </div>
+    <div class="announce hidden" id="lobbyGameNotice"></div>
+    <ul id="players"></ul>
+    <div class="status" id="lobbyStatus">호스트가 게임을 시작하면 자동으로 화면이 바뀝니다</div>
+  </div>
+
+  <!-- ===== 익명 투표 ===== -->
+  <div id="scene-poll" class="hidden">
+    <div class="q" id="pollQ"></div>
+    <div id="pollOpts"></div>
+    <button class="confirm" onclick="confirmPick()" data-idle="선택지를 고르세요" disabled>선택지를 고르세요</button>
+    <div class="status" id="pollStatus">고른 뒤 아래 버튼으로 확정하세요</div>
+  </div>
+  <div id="scene-pollresult" class="hidden">
+    <div class="q" id="resultQ"></div>
+    <div id="resultBars"></div>
+    <div class="status" id="resultTotal"></div>
+  </div>
+
+  <!-- ===== 마피아 ===== -->
+  <!-- 역할 공개 -->
+  <div id="scene-mafia_role" class="hidden">
+    <div class="secret" id="roleSecret">
+      <div class="veil" onpointerdown="reveal(this,true)" onpointerup="reveal(this,false)"
+           onpointerleave="reveal(this,false)">
+        <div class="eye" data-icon="eyeOff"></div><div>꾹 누르고 있는 동안만 보여요</div>
+      </div>
+      <div class="rolecard" id="roleFrame">
+        <img class="roleobj" id="roleImg" src="" alt="">
+      </div>
+      <div class="rolename" id="roleName"></div>
+      <div class="roledesc" id="roleDesc"></div>
+      <div class="roletags" id="roleTags"></div>
+      <div class="mates hidden" id="roleMates"></div>
+    </div>
+    <div class="warn">이 화면을 절대 다른 사람에게 보여주지 마세요!</div>
+    <div class="status">호스트가 밤을 시작하면 화면이 바뀝니다</div>
+  </div>
+
+  <!-- 밤 -->
+  <div id="scene-mafia_night" class="hidden">
+    <div class="center"><span class="phase-badge phase-night" id="nightRound">밤</span></div>
+    <div class="banner"><img id="nightImg" src="/img/scene_night.jpg" alt=""></div>
+    <h1>밤이 되었습니다</h1>
+    <div id="nightAct">
+      <div class="q" id="nightPrompt"></div>
+      <div id="nightTargets"></div>
+      <button class="confirm" onclick="confirmPick()" data-idle="대상을 고르세요" disabled>대상을 고르세요</button>
+      <div class="status" id="nightStatus"></div>
+    </div>
+    <div id="nightSleep" class="center hidden">
+      <div class="big"></div>
+      <div class="status">조용히 눈을 감고 기다려주세요…</div>
+    </div>
+    <div id="policeResult" class="announce hidden"></div>
+  </div>
+
+  <!-- 낮 -->
+  <div id="scene-mafia_day" class="hidden">
+    <div class="center"><span class="phase-badge phase-day" id="dayRound">낮</span></div>
+    <div class="banner"><img id="dayImg" src="" alt=""></div>
+    <div class="announce" id="dayAnnounce"></div>
+    <div class="q">생존자</div>
+    <ul id="dayPlayers"></ul>
+    <div class="status">토론하세요! 호스트가 투표를 시작합니다</div>
+  </div>
+
+  <!-- 낮 투표 -->
+  <div id="scene-mafia_vote" class="hidden">
+    <div class="banner"><img src="/img/scene_vote_exec.jpg" alt=""></div>
+    <h1>누가 마피아일까요?</h1>
+    <div id="voteTargets"></div>
+    <button class="confirm" onclick="confirmPick()" data-idle="지목할 사람을 고르세요" disabled>지목할 사람을 고르세요</button>
+    <div class="status" id="voteStatus">고른 뒤 아래 버튼으로 확정하세요</div>
+  </div>
+
+  <!-- 사망 관전 -->
+  <div id="scene-mafia_dead" class="hidden">
+    <div class="dead-overlay">
+      <img class="ghostimg" src="/img/char_ghost.jpg" alt="">
+      <h1>당신은 사망했습니다</h1>
+      <div class="status">조용히 관전해주세요 (말하면 안 됩니다!)</div>
+    </div>
+  </div>
+
+  <!-- 게임 종료 -->
+  <div id="scene-mafia_end" class="hidden">
+    <div class="banner"><img id="endImg" src="" alt=""></div>
+    <div class="winner" id="endWinner"></div>
+    <div class="announce" id="endExtra"></div>
+    <table id="endReveal"></table>
+  </div>
+
+  <!-- ===== 라이어 게임 ===== -->
+  <div id="scene-liar_word" class="hidden">
+    <div class="secret" id="wordSecret">
+      <div class="veil" onpointerdown="reveal(this,true)" onpointerup="reveal(this,false)"
+           onpointerleave="reveal(this,false)">
+        <div class="eye" data-icon="eyeOff"></div><div>꾹 누르고 있는 동안만 보여요</div>
+      </div>
+      <img class="wordimg hidden" id="wordImg" src="" alt="">
+      <div class="wordcard" id="wordCard">
+        <div class="cat" id="wordCat"></div>
+        <div class="w" id="wordW"></div>
+      </div>
+    </div>
+    <div class="status" id="liarHint"></div>
+    <div class="warn">화면을 다른 사람에게 보여주지 마세요!</div>
+  </div>
+  <div id="scene-liar_vote" class="hidden">
+    <div class="banner"><img src="/img/liar_card.jpg" alt=""></div>
+    <h1>라이어는 누구?</h1>
+    <div id="liarTargets"></div>
+    <button class="confirm" onclick="confirmPick()" data-idle="지목할 사람을 고르세요" disabled>지목할 사람을 고르세요</button>
+    <div class="status" id="liarVoteStatus">고른 뒤 아래 버튼으로 확정하세요</div>
+  </div>
+  <div id="scene-liar_result" class="hidden">
+    <div class="banner"><img id="liarImg2" src="" alt=""></div>
+    <div class="winner" id="liarWinner"></div>
+    <div class="announce" id="liarInfo"></div>
+    <div id="liarVotes"></div>
+  </div>
+
+  <!-- ===== 구슬 룰렛 ===== -->
+  <div id="scene-marble_ready" class="hidden">
+    <h1>내 구슬</h1>
+    <div class="marble" id="marbleBall"></div>
+    <div class="q" id="marbleWho"></div>
+    <div class="status" id="marbleTotal"></div>
+    <div class="announce" id="marbleGoal"></div>
+    <div class="status" id="marbleHint">호스트 화면을 보세요</div>
+  </div>
+
+  <div id="scene-marble_result" class="hidden">
+    <h1>결과</h1>
+    <div class="marble small" id="marbleWinBall"></div>
+    <div class="winner" id="marbleWinName"></div>
+    <div class="announce" id="marbleWinWhy"></div>
+    <div class="q">도착 순서</div>
+    <ul id="marbleRanks"></ul>
+    <div class="seedline" id="marbleSeed"></div>
+  </div>
+
+  <!-- ===== 사다리타기 ===== -->
+  <div id="scene-ladder_ready" class="hidden">
+    <h1>내 사다리</h1>
+    <div class="ladderbadge" id="ladderBadge"></div>
+    <div class="q" id="ladderWho"></div>
+    <div class="status" id="ladderTotal"></div>
+    <div class="q">걸려 있는 것</div>
+    <ul id="ladderOutcomes"></ul>
+    <div class="status" id="ladderHint">호스트 화면을 보세요</div>
+  </div>
+
+  <div id="scene-ladder_result" class="hidden">
+    <h1>내 결과</h1>
+    <div class="ladderbadge small" id="ladderResBadge"></div>
+    <div class="ladder-outcome" id="ladderOutcome"></div>
+    <div class="status" id="ladderResHint"></div>
+  </div>
+
+  <div id="scene-ladder_end" class="hidden">
+    <h1>전체 결과</h1>
+    <table id="ladderTable"></table>
+    <div class="seedline" id="ladderSeed"></div>
+  </div>
+
+  <!-- 강퇴 -->
+  <div id="scene-kicked" class="hidden">
+    <h1>방에서 나가졌습니다</h1>
+    <div class="status">호스트가 이 방에서 내보냈습니다</div>
+  </div>
+
+  <div class="status" id="wsStatus"></div>
+
+  </div>
+ </div></div>
+</div>
+
+<!-- 단톡·자료함 (입장하면 항상 사용 가능) -->
+<button id="chatBtn" class="hidden" onclick="RoomChat.toggle()" aria-label="채팅">
+  <span data-icon="chat" data-size="22"></span>
+  <span id="chatBadge" class="hidden"></span>
+</button>
+<div id="chatPanel">
+  <div class="memo-head">
+    <div class="tabbar">
+      <button class="tab sel" id="tabChat" onclick="RoomChat.setTab('chat')">채팅</button>
+      <button class="tab" id="tabFiles" onclick="RoomChat.setTab('files')">자료</button>
+    </div>
+    <button onclick="RoomChat.toggle()">닫기</button>
+  </div>
+  <!-- 칸 고르기 — '전체' 와 판마다 열린 칸. 게임이 시작되면 그 칸으로 따라간다. -->
+  <div id="chatSections"></div>
+  <div id="chatView">
+    <div id="chatLog"></div>
+    <div class="chatrow">
+      <input id="chatInput" placeholder="메시지"
+             onkeydown="if(event.key==='Enter')RoomChat.sendChat()">
+      <button id="chatSend" onclick="RoomChat.sendChat()">보내기</button>
+    </div>
+  </div>
+  <div id="filesView" class="hidden">
+    <ul id="fileList"></ul>
+    <div id="fileAddRow">
+      <button id="fileUpBtn" onclick="document.getElementById('fileUp').click()">내 폰의 파일 올리기</button>
+      <input type="file" id="fileUp" class="hidden" onchange="RoomChat.upload(this)">
+      <div class="status" id="fileStatus">사진·영상·문서를 이 칸에 올립니다</div>
+    </div>
+    <div class="status hidden" id="fileRelayNote">
+      자료 주고받기는 <b>같은 Wi-Fi</b> 에 있을 때만 됩니다.
+      지금은 인터넷을 거쳐 들어와 있어요.
+    </div>
+  </div>
+</div>
+
+<!-- 개인 메모장 (게임 중 항상 사용 가능) -->
+<button id="memoBtn" class="hidden" onclick="toggleMemo()" aria-label="메모"
+        data-icon="note" data-size="22"></button>
+<div id="memoPanel">
+  <div class="memo-head">
+    <b> 내 메모 (나만 보임)</b>
+    <button onclick="toggleMemo()">닫기</button>
+  </div>
+  <textarea id="memoText" placeholder="의심 정리, 단서 기록… 이 메모는 내 폰에만 저장됩니다."></textarea>
+</div>
+
+<!-- 주소 조립·연결 수명주기는 별도 모듈. 화면 코드보다 먼저 로드돼야 한다. -->
+<script src="/js/icons.js"></script>
+<script src="/js/endpoints.js"></script>
+<script src="/js/chat.js"></script>
+<script src="/js/room-socket.js"></script>
+<script src="/js/game-client.js"></script>
+<script src="/js/games/mafia.js"></script>
+<script src="/js/games/liar.js"></script>
+<script src="/js/games/poll.js"></script>
+<script src="/js/games/marble.js"></script>
+<script src="/js/games/ladder.js"></script>
+<script>
+const qs = new URLSearchParams(location.search);
+const ROOM = qs.get('room') || '';
+let SESSION = localStorage.getItem('pr_session_' + ROOM) || '';
+let ws = null, kicked = false, currentScene = 'join';
+
+// 고른 것과 실제로 보낸 것. 자세한 규칙은 아래 '선택 → 확정' 절 참조.
+let pending = null;   // {type, target|option}
+let sentKey = null;   // 마지막으로 보낸 payload 의 문자열
+
+const $ = id => document.getElementById(id);
+
+// 씬 → 배경. 방 골격(입장·로비·강퇴)은 파티 배경, 밤은 야경, 나머지는 낮 하늘.
+const NIGHT_SCENES = ['mafia_night', 'mafia_dead'];
+const LOBBY_SCENES = ['join', 'lobby', 'kicked'];
+
+function backdropFor(id) {
+  if (NIGHT_SCENES.includes(id)) return 'night';
+  if (LOBBY_SCENES.includes(id)) return 'lobby';
+  return 'day';
+}
+
+// 씬 → 상단 지휘줄. [현재 화면, 지금 하고 있는 것].
+// 라운드 수처럼 종목이 아는 값은 종목 렌더러가 배지에 쓴다.
+const HUD = {
+  join:        ['파티룸', ''],
+  lobby:       ['대기실', ''],
+  mafia_role:  ['역할 배정', '마피아 게임'],
+  mafia_night: ['밤', '마피아 게임'],
+  mafia_day:   ['낮', '마피아 게임'],
+  mafia_vote:  ['투표', '마피아 게임'],
+  mafia_dead:  ['관전', '마피아 게임'],
+  mafia_end:   ['결과', '마피아 게임'],
+  liar_word:   ['제시어', '라이어 게임'],
+  liar_vote:   ['투표', '라이어 게임'],
+  liar_result: ['결과', '라이어 게임'],
+  poll:        ['투표', '익명 투표'],
+  marble_ready:  ['내 구슬', '구슬 룰렛'],
+  marble_result: ['결과', '구슬 룰렛'],
+  ladder_ready:  ['내 사다리', '사다리타기'],
+  ladder_result: ['내 결과', '사다리타기'],
+  ladder_end:    ['전체 결과', '사다리타기'],
+  pollresult:  ['결과', '익명 투표'],
+  kicked:      ['퇴장', ''],
+};
+
+function show(id) {
+  document.querySelectorAll('[id^=scene-]').forEach(el => el.classList.add('hidden'));
+  $('scene-' + id).classList.remove('hidden');
+  currentScene = id;
+
+  const backdrop = backdropFor(id);
+  $('bgLobby').classList.toggle('on', backdrop === 'lobby');
+  $('bgDay').classList.toggle('on', backdrop === 'day');
+  $('bgNight').classList.toggle('on', backdrop === 'night');
+  document.body.classList.toggle('night', backdrop === 'night');
+
+  // 화면이 바뀌면 이전 화면의 선택은 무효다 — 남겨 두면 엉뚱한 확정이 나간다.
+  pending = null;
+  sentKey = null;
+  refreshConfirm();
+
+  const [tag, meta] = HUD[id] || ['파티룸', ''];
+  $('hudTag').textContent = tag;
+  $('hudMeta').textContent = meta || (ROOM ? '방 ' + ROOM : '');
+
+  // 애니메이션을 다시 돌리려면 클래스를 뗐다 붙이고 그 사이에 리플로를 강제해야 한다
+  const top = $('hudTop');
+  top.classList.remove('flash');
+  void top.offsetWidth;
+  top.classList.add('flash');
+
+  // 게임 중이면 메모 버튼, 입장 후엔 언제나 단톡 버튼
+  $('memoBtn').classList.toggle('hidden', LOBBY_SCENES.includes(id));
+  $('chatBtn').classList.toggle('hidden', id === 'join' || id === 'kicked');
+}
+
+// 첫 화면(입장)도 배경·지휘줄을 세우고 시작한다 — show() 를 거치지 않기 때문.
+$('bgLobby').classList.add('on');
+$('hudMeta').textContent = ROOM ? '방 ' + ROOM : '';
+
+// ---- 메모장 (localStorage, 방별) ----
+const memoKey = 'pr_memo_' + ROOM;
+$('memoText').value = localStorage.getItem(memoKey) || '';
+$('memoText').addEventListener('input', e => localStorage.setItem(memoKey, e.target.value));
+function toggleMemo() { $('memoPanel').classList.toggle('open'); }
+
+// ---- 세션 복구 ----
+// data-icon 이 붙은 자리에 SVG 를 넣는다.
+document.querySelectorAll('[data-icon]').forEach(el =>
+  Icon.into(el, el.dataset.icon, +(el.dataset.size || 26)));
+
+window.addEventListener('load', async () => {
+  if (!SESSION) return;
+  try {
+    const r = await fetch(Endpoints.join(), {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({room: ROOM, session: SESSION}),
+    });
+    const d = await r.json();
+    if (d.restored) {
+      setMe(d);
+      show('lobby'); connectWs();
+    } else {
+      localStorage.removeItem('pr_session_' + ROOM); SESSION = '';
+    }
+  } catch (_) {}
+});
+
+// 늦게 입장하면 이미 게임이 도는 중일 수 있다 — 로비에 이유를 적어 주지
+// 않으면 "왜 나만 아무 일도 없지" 가 된다. 명단은 시작 시점에 고정이므로
+// 이번 판에는 못 끼고, 끝나면 자동으로 합류한다.
+function roomStatus(msg) {
+  const notice = $('lobbyGameNotice');
+  if (msg.gameActive) {
+    notice.textContent =
+      `지금 ${msg.gameName || '게임'} 진행 중 — 이번 판이 끝나면 자동으로 참여됩니다`;
+    notice.classList.remove('hidden');
+    $('lobbyStatus').textContent = '기다리는 동안 단톡(왼쪽 아래)을 쓸 수 있어요';
+  } else {
+    notice.classList.add('hidden');
+    $('lobbyStatus').textContent = '호스트가 게임을 시작하면 자동으로 화면이 바뀝니다';
+  }
+}
+
+/** 입장/복구 응답에서 내 이름과 식별자를 화면에 세운다. */
+function setMe(d) {
+  $('me').textContent = d.nickname;
+  $('meTag').textContent = d.tag || '';
+  window.MYTAG = d.tag || '';
+}
+
+/** 이름을 바꾼다.
+ *
+ * 오타 하나로 파티 내내 그 이름을 달고 다니게 두지 않는다. 태그(4자)는
+ * 그대로라 사람을 특정하는 데는 지장이 없다.
+ *
+ * 화면을 먼저 바꾸지 않는다 — 서버가 거절하면(빈 이름·13자 이상·연타)
+ * 둘이 어긋난 채로 남는다. 서버의 `renamed` 를 받고 나서 바꾼다.
+ */
+function changeName() {
+  const now = $('me').textContent;
+  const want = prompt('새 이름 (최대 12자)', now);
+  if (want === null) return;
+  const name = want.trim();
+  if (!name || name === now) return;
+  if (name.length > 12) { alert('이름은 12자까지입니다'); return; }
+  // 방 소켓 인스턴스로 보낸다 — RoomSocket 은 create 로 만들어 쓰는 것이지
+  // 정적 send 가 있는 것이 아니다.
+  if (!ws) return;
+  ws.send({ type: 'rename', nickname: name });
+}
+
+/// 입장 실패를 사람 말로 옮긴다.
+///
+/// 서버는 기계용 코드를 준다(pin_required 등). 그대로 띄우면 참가자는
+/// 무엇을 해야 할지 모른다 — 특히 비밀번호는 **칸을 꺼내 주는 것**까지가
+/// 안내다.
+function showJoinError(d) {
+  const status = $('joinStatus');
+  switch (d.error) {
+    case 'pin_required': {
+      const pin = $('pin');
+      const first = pin.classList.contains('hidden');
+      pin.classList.remove('hidden');
+      pin.focus();
+      status.textContent = first
+        ? '이 방은 입장 비밀번호가 있습니다'
+        : '비밀번호가 맞지 않습니다';
+      return;
+    }
+    case 'pin_locked':
+      status.textContent =
+        `여러 번 틀려서 ${d.retryAfter || 30}초 뒤에 다시 시도할 수 있습니다`;
+      return;
+    case 'room_closed':
+      status.textContent = '지금은 닫힌 방입니다 — 호스트에게 물어보세요';
+      return;
+    case 'room_full':
+      status.textContent = '방이 가득 찼습니다';
+      return;
+    case 'bad_nickname':
+      status.textContent = '닉네임을 1~12자로 넣어주세요';
+      return;
+    case 'bad_room':
+      status.textContent = '없는 방입니다 — QR 을 다시 찍어주세요';
+      return;
+    default:
+      status.textContent = '실패: ' + d.error;
+  }
+}
+
+async function join() {
+  const nick = $('nick').value.trim();
+  if (!nick) return;
+  $('joinStatus').textContent = '입장 중…';
+  try {
+    const r = await fetch(Endpoints.join(), {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({
+        room: ROOM, nickname: nick,
+        pin: $('pin').value.trim() || undefined,
+      }),
+    });
+    const d = await r.json();
+    if (d.error) { showJoinError(d); return; }
+    SESSION = d.session;
+    localStorage.setItem('pr_session_' + ROOM, SESSION);
+    // iOS 는 입력에 포커스가 남아 있으면 키보드를 내려도 폼 바(∧ ∨ 완료)를
+    // 계속 띄운다 — 파티 내내 화면 아래가 그 바에 먹힌다.
+    $('nick').blur();
+    setMe(d);
+    show('lobby'); connectWs();
+  } catch (e) { $('joinStatus').textContent = '연결 실패 — 같은 Wi-Fi 인지 확인'; }
+}
+
+// 연결 수명주기는 RoomSocket 이, 주소 조립은 Endpoints 가 맡는다(js/ 참조).
+function connectWs() {
+  ws = RoomSocket.create({
+    room: ROOM,
+    session: SESSION,
+    onMessage: handle,
+    onStatus: (text) => { $('wsStatus').textContent = text; },
+    // 서버가 세션을 못 알아본다 = 방이 새로 열렸다(지난 파티 정리). 끊긴
+    // 채로 영원히 재시도하지 말고, 저장된 세션을 버리고 입장 화면으로.
+    onAuthFailed: () => {
+      localStorage.removeItem('pr_session_' + ROOM);
+      SESSION = '';
+      $('wsStatus').textContent = '';
+      $('joinStatus').textContent = '새 방이 열렸습니다 — 다시 입장해 주세요';
+      show('join');
+    },
+  });
+  ws.connect();
+}
+const send = obj => !!ws && ws.send(obj);
+
+// ---- 메시지 라우팅 ----
+// 종목별 씬·메시지는 js/games/*.js 가 GameClient 에 등록한다.
+// 여기 남는 것은 어느 게임에도 속하지 않는 방 골격뿐이다.
+function handle(msg) {
+  switch (msg.type) {
+    case 'lobby': renderPlayers(msg.players); return;
+    // 서버가 받아들인 뒤에야 화면이 바뀐다 — 낙관적으로 바꾸면 거절당했을 때
+    // 내 화면만 새 이름이고 남들 화면은 옛 이름이 된다.
+    case 'renamed': $('me').textContent = msg.nickname; return;
+    case 'kicked':
+      kicked = true; localStorage.removeItem('pr_session_' + ROOM);
+      // 재접속 루프를 끊는다 — 안 끊으면 강퇴당하고도 1.5초마다 다시 붙으려 한다.
+      if (ws) ws.stop();
+      show('kicked'); return;
+  }
+  if (RoomChat.onMessage(msg)) return;
+  if (msg.type === 'room_status') { roomStatus(msg); return; }
+  if (msg.type === 'scene' && msg.scene === 'lobby') { show('lobby'); return; }
+  GameClient.handle(msg);
+}
+
+
+// ---- 마피아 렌더 ----
+
+
+
+// ---- 공용 ----
+// ---- 선택 → 확정 ────────────────────────────────────────────
+// 누르는 즉시 보내지 않는다. 지목·투표는 되돌릴 수 없는 성격의 조작이라
+// 손가락이 미끄러진 것과 마음을 정한 것을 구분해야 한다.
+// 고른 것(pending)과 실제로 보낸 것(sentKey)을 따로 들고, 둘이 다를 때만
+// 확정 버튼이 살아난다.
+function markPick(btn, payload) {
+  btn.parentElement.querySelectorAll('.opt').forEach(b => b.classList.remove('sel'));
+  btn.classList.add('sel');
+  pending = payload;
+  refreshConfirm();
+}
+
+/** 사람을 지목한다(마피아 밤 행동·처형 투표·라이어 지목). */
+function pickTarget(btn, type) {
+  markPick(btn, {type, target: btn.dataset.tag});
+}
+
+/** 항목을 고른다(익명 투표). */
+function pickOption(btn, type) {
+  markPick(btn, {type, option: +btn.dataset.i});
+}
+
+function confirmPick() {
+  if (!pending) return;
+  send(pending);
+  sentKey = JSON.stringify(pending);
+  refreshConfirm();
+}
+
+/** 현재 화면의 확정 버튼 상태·문구를 지금 상황에 맞춘다. */
+function refreshConfirm() {
+  const btn = document.querySelector('#scene-' + currentScene + ' .confirm');
+  if (!btn) return;
+  if (!pending) {
+    btn.disabled = true;
+    btn.textContent = btn.dataset.idle || '선택하세요';
+    return;
+  }
+  const alreadySent = sentKey === JSON.stringify(pending);
+  btn.disabled = alreadySent;
+  btn.textContent = alreadySent
+    ? '보냈습니다'
+    : (sentKey ? '이걸로 바꾸기' : '이걸로 확정');
+}
+
+/** 서버가 다시 그려 준 선택 상태를 화면에 반영한다(익명 투표 ack). */
+function markVote(sel, idx) {
+  document.querySelectorAll(sel + ' .opt').forEach(b =>
+    b.classList.toggle('sel', +b.dataset.i === idx));
+}
+// 사람 한 명을 화면에 적는 방식은 여기서만 정한다.
+// 닉네임 뒤에 방이 발급한 식별자를 붙여 동명이인을 가른다 — "민서" 가 둘이면
+// 지목·강퇴가 누구를 향한 건지 이름만으로는 알 수 없다.
+function nameHtml(p) {
+  const tag = p.tag ? `<span class="ptag">${esc(p.tag)}</span>` : '';
+  return `<span class="name">${esc(p.nickname)}</span>${tag}`;
+}
+
+// 고를 수 있는 줄은 오른쪽 끝에 마름모 표식을 단다 — 소제목·읽기 전용 목록과
+// 한눈에 갈리는 유일한 표시라 렌더러마다 다시 쓰지 않고 여기서만 붙인다.
+const OPT_MARK = '<span class="optmark"></span>';
+
+/** 지목 버튼 — 세 게임이 같은 모양을 쓴다. */
+function targetBtn(t, type) {
+  // 지목은 **공개 태그**로 보낸다. 예전에는 세션 토큰을 심었는데, 그건 이
+  // 참가자의 인증 자격증명이라 남의 폰 DOM 에서 읽어 역할을 훔쳐보고 대신
+  // 투표할 수 있었다. 서버가 태그를 세션으로 푼다.
+  return `<button class="opt" data-tag="${esc(t.tag)}" onclick="pickTarget(this,'${type}')">${nameHtml(t)}${OPT_MARK}</button>`;
+}
+
+/** 선택지 버튼 — 사람이 아니라 항목을 고르는 경우(익명 투표). */
+function choiceBtn(label, i, type) {
+  return `<button class="opt" data-i="${i}" onclick="pickOption(this,'${type}')">` +
+    `<span class="name">${esc(label)}</span>${OPT_MARK}</button>`;
+}
+
+function renderPlayers(list) {
+  // 접속 중이 먼저. 끊긴 사람은 흐리게 + 문구 — 점 색깔만으로는 안 갈린다.
+  const sorted = [...list].sort((a, b) => (b.connected|0) - (a.connected|0));
+  $('players').innerHTML = sorted.map(p =>
+    `<li class="${p.connected ? '' : 'off-row'}">${nameHtml(p)}` +
+    (p.connected ? '' : '<span class="offlabel">끊김</span>') +
+    `<span class="dot ${p.connected?'on':'off'}"></span></li>`).join('');
+  // 로비에 있는 동안은 지휘줄이 인원을 대신 보여준다
+  if (currentScene === 'lobby' || currentScene === 'join') {
+    const on = list.filter(p => p.connected).length;
+    $('hudMeta').textContent = `${on}/${list.length}명 접속`;
+  }
+}
+function reveal(veil, on) {
+  veil.parentElement.classList.toggle('revealed', on);
+}
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+</script>
+</body>
+</html>

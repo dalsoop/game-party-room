@@ -1,0 +1,20 @@
+# 빌드 컨텍스트가 저장소 루트라, 이걸 안 걸면 macOS 빌드 산출물(수백 MB)까지
+# 데몬으로 올라간다.
+#
+# 파일명이 `Dockerfile.dockerignore` 인 이유: .dockerignore 는 **컨텍스트
+# 루트**에서만 읽힌다. BuildKit 은 `<Dockerfile 경로>.dockerignore` 도 보므로,
+# 저장소 루트를 건드리지 않고 이 빌드에만 거는 방법이 이것이다.
+**/.git
+**/.dart_tool
+**/build
+**/.build
+**/*.iml
+**/.idea
+**/.vscode
+**/ios
+**/android
+**/macos
+**/windows
+**/linux
+**/test
+**/.DS_Store

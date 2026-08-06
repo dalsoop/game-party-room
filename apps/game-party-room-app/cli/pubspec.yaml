@@ -1,0 +1,10 @@
+name: partyroom_cli
+description: 파티룸 호스트 앱을 화면 없이 조종하는 CLI.
+publish_to: none
+version: 1.0.0
+
+environment:
+  sdk: ^3.9.0
+
+dev_dependencies:
+  lints: ^6.0.0

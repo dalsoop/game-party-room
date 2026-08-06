@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- 샌드박스를 끈다.
+	     이 앱은 (1) 로컬 방 서버를 임의 포트에 열고 (2) 인터넷 개방을 위해
+	     cloudflared 프로세스를 띄운다. 샌드박스에서는 컨테이너 밖 바이너리를
+	     읽지도 실행하지도 못해 "인터넷으로 열기"가 원천 불가능하다.
+	     Mac App Store 가 아닌 Developer ID 배포이므로 공증에는 영향이 없다. -->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.network.server</key>
+	<true/>
+	<key>com.apple.security.files.user-selected.read-only</key>
+	<true/>
+</dict>
+</plist>
